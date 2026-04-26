@@ -14,12 +14,12 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
 });
 
-app.get('/api/health', (req, res) => {
+app.get('/health', (req, res) => {
   console.log(`isteği alan container: ${process.env.HOSTNAME}`);
   res.json({ status: 'ok' });
 });
 
-app.get('/api/todos', async (req, res) => {
+app.get('/todos', async (req, res) => {
   console.log(`isteği alan container: ${process.env.HOSTNAME}`);
   // 1. cache'e bak
   const cached = await redis.get('todos');
