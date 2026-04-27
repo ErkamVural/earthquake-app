@@ -1,55 +1,28 @@
 const express = require('express');
 const Redis = require('ioredis');
-const { Pool } = require('pg');
 
 const app = express();
 app.use(express.json());
 const redis = new Redis({ host: process.env.REDIS_HOST, port: process.env.REDIS_PORT });
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+async function fetchAndCache() {
+  const data = await fetch('https://api.orhanaydogdu.com.tr/deprem/kandilli/live');
+  const data = await response.json();
+  await redis.set('earthquakes', JSON.stringify(data.result), 'EX', 300);
+  console.log('Deprem verisi güncellendi');
+}
+
+app.get('/earthquakes', async (req, res) => {
+    const data = await redis.get('earthquakes');
+    if(data){
+        console.log(`Veriler Redis'den alınıyor.`);
+        return res.json(JSON.parse(data));
+    }
+    else{
+        const response = await fetch('https://api.orhanaydogdu.com.tr/deprem/kandilli/live');
+        const data = await response.json();
+        return res.json(data.result);
+        await redis.set('earthquakes', JSON.stringify(data.result), 'EX', 300);
+        console.log('Deprem verisi güncellendi');
+    }
 });
-
-app.get('/health', (req, res) => {
-  console.log(`isteği alan container: ${process.env.HOSTNAME}`);
-  res.json({ status: 'ok' });
-});
-
-app.get('/todos', async (req, res) => {
-  console.log(`isteği alan container: ${process.env.HOSTNAME}`);
-  // 1. cache'e bak
-  const cached = await redis.get('todos');
-  if (cached) {
-    console.log("Veriler Redis'ten alınıyor.");
-    return res.json(JSON.parse(cached)); // cache'den dön, DB'ye gitme
-  }
-
-  console.log("Veriler veritabanından alınıyor.");
-  // 2. cache boşsa DB'ye git
-  const result = await pool.query('SELECT * FROM todos ORDER BY id');
-  
-  // 3. sonucu cache'e yaz, 60 saniye sonra otomatik sil
-  await redis.set('todos', JSON.stringify(result.rows), 'EX', 60);
-  
-  res.json(result.rows);
-});
-
-app.post('/api/todos', async (req, res) => {
-  console.log(`isteği alan container: ${process.env.HOSTNAME}`);
-  const { title } = req.body;
-  const result = await pool.query(
-    'INSERT INTO todos (title, done) VALUES ($1, false) RETURNING *',
-    [title]
-  );
-
-  // veri değişti, cache'i sil
-  await redis.del('todos');
-  
-  res.status(201).json(result.rows[0]);
-});
-
-app.listen(3000, () => console.log('API running on port 3000'));

@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Deprem Takip — Türkiye</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --panel: #111118;
+      --border: #1e1e2e;
+      --text: #e8e8f0;
+      --muted: #555570;
+      --accent: #ff3c3c;
+      --warn: #ff9500;
+      --info: #3c8fff;
+      --safe: #00e676;
+      --font-mono: 'Space Mono', monospace;
+      --font-display: 'Syne', sans-serif;
+    }
+
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); }
+
+    /* ── LAYOUT ── */
+    #app {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: 56px 1fr;
+      height: 100vh;
+    }
+
+    /* ── HEADER ── */
+    #header {
+      grid-column: 1 / -1;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      gap: 16px;
+    }
+
+    #header .logo {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+
+    #header .logo span { color: var(--accent); }
+
+    #header .meta {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .pulse-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--safe);
+      display: inline-block;
+      margin-right: 6px;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    #last-update { color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #sidebar-header h2 {
+      font-family: var(--font-display);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* stats row */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .stat-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      text-align: center;
+    }
+
+    .stat-box .val {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .stat-box .lbl {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--muted);
+      margin-top: 3px;
+      text-transform: uppercase;
+    }
+
+    /* legend */
+    .legend {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* list */
+    #eq-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    #eq-list::-webkit-scrollbar { width: 4px; }
+    #eq-list::-webkit-scrollbar-track { background: transparent; }
+    #eq-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .eq-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .eq-card:hover { border-color: var(--muted); background: #13131a; }
+    .eq-card.active { border-color: var(--accent); }
+
+    .eq-mag {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 700;
+      min-width: 36px;
+      text-align: center;
+      line-height: 1;
+    }
+
+    .eq-info { flex: 1; min-width: 0; }
+
+    .eq-title {
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text);
+    }
+
+    .eq-meta {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .eq-depth {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--muted);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    /* ── MAP ── */
+    #map {
+      width: 100%;
+      height: 100%;
+      background: #0a0a14;
+    }
+
+    /* Leaflet dark tiles override */
+    .leaflet-tile { filter: brightness(0.7) saturate(0.5) hue-rotate(180deg); }
+    .leaflet-container { background: #0a0a14; font-family: var(--font-mono); }
+
+    /* Custom popup */
+    .leaflet-popup-content-wrapper {
+      background: var(--panel) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 8px !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+      color: var(--text) !important;
+      font-family: var(--font-mono) !important;
+      font-size: 12px !important;
+    }
+
+    .leaflet-popup-tip { background: var(--panel) !important; }
+    .leaflet-popup-close-button { color: var(--muted) !important; }
+
+    .popup-mag {
+      font-size: 28px;
+      font-weight: 700;
+      font-family: var(--font-display);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .popup-title {
+      font-size: 13px;
+      font-weight: 700;
+      font-family: var(--font-display);
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+
+    .popup-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      color: var(--muted);
+      font-size: 10px;
+      margin-top: 3px;
+    }
+
+    .popup-row span:last-child { color: var(--text); }
+
+    /* loading */
+    #loading {
+      position: fixed; inset: 0;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      gap: 16px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+      transition: opacity 0.4s;
+    }
+
+    #loading.hidden { opacity: 0; pointer-events: none; }
+
+    .spinner {
+      width: 32px; height: 32px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* error */
+    #error-bar {
+      display: none;
+      position: fixed;
+      bottom: 16px; left: 50%; transform: translateX(-50%);
+      background: #2a0a0a;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <span>Deprem verileri yükleniyor...</span>
+</div>
+
+<div id="error-bar"></div>
+
+<div id="app">
+  <header id="header">
+    <div class="logo">deprem<span>.</span>tr</div>
+    <div class="meta">
+      <span><span class="pulse-dot"></span>CANLI</span>
+      <span id="last-update">—</span>
+      <span>Kaynak: Kandilli Rasathanesi</span>
+    </div>
+  </header>
+
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <h2>Son 50 Deprem</h2>
+      <div class="stats-row">
+        <div class="stat-box">
+          <div class="val" id="stat-total" style="color: var(--info)">—</div>
+          <div class="lbl">Toplam</div>
+        </div>
+        <div class="stat-box">
+          <div class="val" id="stat-max" style="color: var(--accent)">—</div>
+          <div class="lbl">En Büyük</div>
+        </div>
+        <div class="stat-box">
+          <div class="val" id="stat-m3" style="color: var(--warn)">—</div>
+          <div class="lbl">M3+</div>
+        </div>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#00e676"></div> &lt;2.0</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ffeb3b"></div> 2–3</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ff9500"></div> 3–4</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ff3c3c"></div> 4–5</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#cc00ff"></div> 5+</div>
+      </div>
+    </div>
+    <div id="eq-list"></div>
+  </aside>
+
+  <div id="map"></div>
+</div>
+
+<script>
+  // ── CONFIG ──────────────────────────────────────────────────────────────────
+  const API_URL = '/api/earthquakes';
+  const REFRESH_MS = 60000;
+
+  // ── MAP INIT ─────────────────────────────────────────────────────────────────
+  const map = L.map('map', { zoomControl: false }).setView([39.0, 35.0], 6);
+
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 18,
+  }).addTo(map);
+
+  // ── HELPERS ──────────────────────────────────────────────────────────────────
+  function magColor(mag) {
+    if (mag >= 5)   return '#cc00ff';
+    if (mag >= 4)   return '#ff3c3c';
+    if (mag >= 3)   return '#ff9500';
+    if (mag >= 2)   return '#ffeb3b';
+    return '#00e676';
+  }
+
+  function magRadius(mag) {
+    return Math.max(4000, mag * mag * 3500);
+  }
+
+  function formatTime(dateStr) {
+    const d = new Date(dateStr.replace(' ', 'T') + '+03:00');
+    return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function formatDate(dateStr) {
+    const d = new Date(dateStr.replace(' ', 'T') + '+03:00');
+    return d.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' });
+  }
+
+  // ── STATE ─────────────────────────────────────────────────────────────────────
+  let circles = [];
+  let activeCard = null;
+
+  function clearMap() {
+    circles.forEach(c => map.removeLayer(c));
+    circles = [];
+  }
+
+  // ── RENDER ───────────────────────────────────────────────────────────────────
+  function render(data) {
+    clearMap();
+    const list = document.getElementById('eq-list');
+    list.innerHTML = '';
+
+    // stats
+    const total = data.length;
+    const maxMag = Math.max(...data.map(e => e.mag));
+    const m3count = data.filter(e => e.mag >= 3).length;
+
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-max').textContent = maxMag.toFixed(1);
+    document.getElementById('stat-m3').textContent = m3count;
+
+    // last update
+    document.getElementById('last-update').textContent =
+      'Güncellendi: ' + new Date().toLocaleTimeString('tr-TR');
+
+    data.forEach((eq, i) => {
+      const [lon, lat] = eq.geojson.coordinates;
+      const color = magColor(eq.mag);
+
+      // map circle
+      const circle = L.circle([lat, lon], {
+        radius: magRadius(eq.mag),
+        color: color,
+        fillColor: color,
+        fillOpacity: 0.25,
+        weight: 1.5,
+      }).addTo(map);
+
+      const popupContent = `
+        <div style="min-width:200px">
+          <div class="popup-mag" style="color:${color}">${eq.mag.toFixed(1)}</div>
+          <div class="popup-title">${eq.title}</div>
+          <div class="popup-row"><span>Derinlik</span><span>${eq.depth} km</span></div>
+          <div class="popup-row"><span>Tarih</span><span>${formatDate(eq.date_time)}</span></div>
+          <div class="popup-row"><span>Saat</span><span>${formatTime(eq.date_time)}</span></div>
+        </div>
+      `;
+      circle.bindPopup(popupContent);
+      circles.push(circle);
+
+      // sidebar card
+      const card = document.createElement('div');
+      card.className = 'eq-card';
+      card.innerHTML = `
+        <div class="eq-mag" style="color:${color}">${eq.mag.toFixed(1)}</div>
+        <div class="eq-info">
+          <div class="eq-title">${eq.title}</div>
+          <div class="eq-meta">${formatDate(eq.date_time)} · ${formatTime(eq.date_time)}</div>
+        </div>
+        <div class="eq-depth">${eq.depth}<br>km</div>
+      `;
+
+      card.addEventListener('click', () => {
+        if (activeCard) activeCard.classList.remove('active');
+        card.classList.add('active');
+        activeCard = card;
+        map.setView([lat, lon], 9, { animate: true });
+        circle.openPopup();
+      });
+
+      list.appendChild(card);
+    });
+  }
+
+  // ── FETCH ────────────────────────────────────────────────────────────────────
+  async function loadData() {
+    try {
+      const res = await fetch(API_URL);
+      if (!res.ok) throw new Error('API hatası: ' + res.status);
+      const data = await res.json();
+      render(data);
+      document.getElementById('loading').classList.add('hidden');
+    } catch (err) {
+      console.error(err);
+      const bar = document.getElementById('error-bar');
+      bar.textContent = 'Veri alınamadı: ' + err.message;
+      bar.style.display = 'block';
+      setTimeout(() => bar.style.display = 'none', 4000);
+      document.getElementById('loading').classList.add('hidden');
+    }
+  }
+
+  loadData();
+  setInterval(loadData, REFRESH_MS);
+</script>
+</body>
+</html>
